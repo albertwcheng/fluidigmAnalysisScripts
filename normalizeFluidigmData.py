@@ -48,7 +48,10 @@ Index			Excel			Field
 10			J			CtThreshold
 
 '''
-
+def mean(numberList):
+    floatNums = [float(x) for x in numberList]
+    return sum(floatNums) / len(numberList)
+    
 def emptyAllTheseArrays(listOfArrays):
 	for L in listOfArrays:
 		del L[:]
@@ -57,7 +60,7 @@ def emptyAllTheseArrays(listOfArrays):
 def readFluidigmFile(filename,SampleNameCol,geneNameCol,CtValueCol,CtQualityCol,CtCallCol,headerRow,startRow,fs,geneNameMap):
 	header,prestarts=getHeader(filename,headerRow,startRow,fs)
 	SampleNameCol=getCol0ListFromCol1ListStringAdv(header,SampleNameCol)[0]
-	GeneNameCol=getCol0ListFromCol1ListStringAdv(header,GeneNameCol)[0]
+	GeneNameCol=getCol0ListFromCol1ListStringAdv(header,geneNameCol)[0]
 	CtValueCol=getCol0ListFromCol1ListStringAdv(header,CtValueCol)[0]
 	CtQualityCol=getCol0ListFromCol1ListStringAdv(header,CtQualityCol)[0]
 	CtCallCol=getCol0ListFromCol1ListStringAdv(header,CtCallCol)[0]
@@ -77,7 +80,11 @@ def readFluidigmFile(filename,SampleNameCol,geneNameCol,CtValueCol,CtQualityCol,
 	#now load the values
 	#open file first
 	fil=open(filename)
+	lino=0
 	for lin in fil:
+		lino+=1
+		if lino<startRow:
+			continue
 		fields=lin.rstrip("\r\n").split(fs)
 		SampleName=fields[SampleNameCol]
 		GeneName=fields[GeneNameCol]
@@ -88,7 +95,9 @@ def readFluidigmFile(filename,SampleNameCol,geneNameCol,CtValueCol,CtQualityCol,
 		
 		if geneNameMap and len(geneNameMap)>0: #if geneName Map is present
 			try:
+				#print >> stderr,GeneName,"to",
 				GeneName=geneNameMap[GeneName] #map it to proper name
+				#print >> stderr,GeneName
 			except:
 				pass
 		
@@ -146,7 +155,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 	
 	sampleToRemove=[]
 	
-	for idx in range(len(sampleNames),-1,-1):
+	for idx in range(len(sampleNames)-1,-1,-1):
 		sampleName=sampleNames[idx]
 		sampleStruct=sampleStructs[idx]
 
@@ -159,28 +168,29 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 			
 			isControl=(geneName in options.controlNames)
 			
-			for j in range(numValuesForThisGene,-1,-1): #from back for convenient deletion
+			for j in range(numValuesForThisGene-1,-1,-1): #from back for convenient deletion
 				thisCtValue=CtValuesForThisGene[j]
 				thisCtQuality=CtQualsForThisGene[j]
 				thisCtCall=CtCallForThisGene[j]
-				if options.discardCtCallFailed && thisCtCall.strip().upper()=="FAIL":
+				if options.discardCtCallFailed and thisCtCall.strip().upper()=="FAIL":
 					#discard this
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 					
-				if thisCtQuality<options.CtQualityThreshold):
+				if thisCtQuality<options.CtQualityThreshold:
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 				
 				if thisCtValue>=options.CtValueThreshold:
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
-					
-			#now filter for deviation
-			dev=max(CtValuesForThisGene)-min(CtValuesForThisGene)
-			if dev>options.MaxCtRepDev:
-				#remove all elements!!
-				emptyAllTheseArrays(dataForThisGene)
+			
+			if len(CtValuesForThisGene)>0:		
+				#now filter for deviation
+				dev=max(CtValuesForThisGene)-min(CtValuesForThisGene)
+				if dev>options.MaxCtRepDev:
+					#remove all elements!!
+					emptyAllTheseArrays(dataForThisGene)
 					
 				
 		#now for each control genes:
@@ -189,6 +199,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=sampleStruct[controlName]
 			except KeyError:
 				#control not found, remove the whole row
+				print >> stderr,"control not found",controlName
 				sampleToRemove.append(idx)
 				invalidSample=True
 				break #don't care about other stuff
@@ -205,11 +216,18 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				sampleToRemove.append(idx)
 				invalidSample=True
 				break #don't care about other stuff
-				
+		
+			
 		#before checking all data points, ignore if sample is already to be removed
 		if not invalidSample:
 			#now check each points
 			for geneName,dataForThisGene in sampleStruct.items():
+			
+				isControl=(geneName in options.controlNames)
+				
+				if isControl:
+					continue #ignore controls
+								
 				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=dataForThisGene
 				numValuesForThisGene=len(CtValuesForThisGene)
 				
@@ -217,14 +235,12 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 					#remove this particular gene
 					emptyAllTheseArrays(dataForThisGene)				
 					
-				isControl=(geneName in options.controlNames)
+
 				
-				if isControl:
-					continue #ignore controls
-				
-				dataMean=mean(CtValuesForThisGene)
-				if dataMean>options.CtValueThresholdPerData:
-					emptyAllTheseArrays(dataForThisGene)	
+				if len(CtValuesForThisGene)>0:
+					dataMean=mean(CtValuesForThisGene)
+					if dataMean>options.CtValueThresholdPerData:
+						emptyAllTheseArrays(dataForThisGene)	
 	
 	
 	return sampleToRemove			
@@ -240,20 +256,33 @@ def normalizeFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows):
 		#now get control values:
 		controlValues=[]
 		for controlName in options.controlNames:
+			#print >> stderr,idx,sampleName,sampleStruct[controlName]
 			controlValues.append(mean(sampleStruct[controlName][0])) #column 0 is CtValues
 		
 		controlMean=mean(controlValues)
 	
 		#now go to data and normalize by data-controlMean
-		for geneName,dataForThisGene in sampleStructs.items():
+		for geneName,dataForThisGene in sampleStruct.items():
+		
+			if geneName in options.controlNames:
+				continue #not normalize the controls
+		
 			CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=dataForThisGene
 			#not collapsed yet
 			for j in range(0,len(CtValuesForThisGene)):
 				CtValuesForThisGene[j]-=controlMean
 
 def getMeanCtValueForGene(sampleStruct,geneName):
-	return mean(sampleStruct[geneName][0]) #0 stores CtValues
-	
+	try:
+		return mean(sampleStruct[geneName][0]) #0 stores CtValues
+	except:
+		return "NA"
+
+def getStrArray(L):
+	S=[]
+	for x in L:
+		S.append(str(x))
+	return S	
 def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,printControl):
 	#now print header
 	fieldsToPrint=["SampleName"]
@@ -286,13 +315,13 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 			#print controls?
 			if options.printControl:
 				for controlName in options.controlNames:
-					fieldsToPrint.append(getMeanCtValueForGene(controlName))
+					fieldsToPrint.append(str(getMeanCtValueForGene(sampleStruct,controlName)))
 			
 			#now print data
 			for geneName in geneNamesInOrderNoControls:
-				fieldsToPrint.append(getMeanCtValueForGene(geneName))
+				fieldsToPrint.append(str(getMeanCtValueForGene(sampleStruct,geneName)))
 			
-	print >> stdout,"\t".join(fieldsToPrint)
+		print >> stdout,"\t".join(fieldsToPrint)
 	
 		
 if __name__=='__main__':
@@ -328,7 +357,8 @@ if __name__=='__main__':
 	(options, args) = parser.parse_args(argv)
 	
 	try:
-		infile,=args
+		infile,=args[1:]
+		#print >> stderr,infile
 	except:
 		parser.print_help()
 		exit()
@@ -337,10 +367,10 @@ if __name__=='__main__':
 	
 	geneNameMap=dict()
 
-	if parser.geneNameMap:
+	if options.geneNameMap:
 		#if a gene name map is specified, usu is, then load it
-		print >> stderr,"load gene map from",parser.geneNameMap
-		fil=open(parser.geneNameMap)
+		print >> stderr,"load gene map from",options.geneNameMap
+		fil=open(options.geneNameMap)
 		for lin in fil:
 			fields=lin.strip().split("\t")
 			geneNameMap[fields[0]]=fields[1]
@@ -349,17 +379,19 @@ if __name__=='__main__':
 		fil.close()	
 	
 	#now process arguments
-	parser.controlNames=parser.controlNames.split(",")
+	options.controlNames=options.controlNames.split(",")
 	
 	#now load the infile
-	sampleNames,sampleStructs=readFluidigmFile(infile,parser.SampleNameCol,parser.geneNameCol,parser.CtValueCol,parser.CtQualityCol,parser.CtCallCol,parser.headerRow,parser.startRow,parser.fs,geneNameMap)
+	sampleNames,sampleStructs=readFluidigmFile(infile,options.sampleNameCol,options.geneNameCol,options.CtValueCol,options.CtQualityCol,options.CtCallCol,options.headerRow,options.startRow,options.fs,geneNameMap)
 	
 	#filter data
 	invalidSampleRows=filterFluidigmData(sampleNames,sampleStructs,options)
+	
+	#print >> stderr,"invalid sample rows",sorted(invalidSampleRows)
 	
 	#now normalize data
 	normalizeFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows)
 	
 	#now output
-	printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,printControl)
+	printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,options.printControl)
 	
