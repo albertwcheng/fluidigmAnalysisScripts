@@ -174,14 +174,17 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				thisCtCall=CtCallForThisGene[j]
 				if options.discardCtCallFailed and thisCtCall.strip().upper()=="FAIL":
 					#discard this
+					print >> stderr,"Filter1: Discard data point due to FAIL Ct Call","for sample",sampleName,"and gene",geneName
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 					
 				if thisCtQuality<options.CtQualityThreshold:
+					print >> stderr,"Filter2: Discard data point due to CtQuality lower than Threshold. CtQuality=",thisCtQuality,"<",options.CtQualityThreshold,"=threshold","for sample",sampleName,"and gene",geneName
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 				
 				if thisCtValue>=options.CtValueThreshold:
+					print >> stderr,"Filter3: Discard data point due to CtValue >= Threshold. CtValue=",thisCtValue,">=",options.CtValueThreshold,"=threshold","for sample",sampleName,"and gene",geneName
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 			
@@ -190,6 +193,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				dev=max(CtValuesForThisGene)-min(CtValuesForThisGene)
 				if dev>options.MaxCtRepDev:
 					#remove all elements!!
+					print >> stderr,"Filter4: Discard data point due to deviation > Maximal. dev=",dev,">=",options.MaxCtRepDev,"=threshold","for sample",sampleName,"and gene",geneName
 					emptyAllTheseArrays(dataForThisGene)
 					
 				
@@ -199,13 +203,14 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=sampleStruct[controlName]
 			except KeyError:
 				#control not found, remove the whole row
-				print >> stderr,"control not found",controlName
+				print >> stderr,"Filter5: Discard data row (the whole sample) because control",controlName,"not found for sample",sampleName
 				sampleToRemove.append(idx)
 				invalidSample=True
 				break #don't care about other stuff
 				
 			if len(CtValuesForThisGene)==0 or len(CtValuesForThisGene)<options.minValidReplicatesControl:
 				#this whole row is to be removed
+				print >> stderr,"Filter6: Discard data row (the whole sample) because number of replicates for",controlName,"was",len(CtValuesForThisGene),"<minimum=",options.minValidReplicatesControl,"for sample",sampleName
 				sampleToRemove.append(idx)
 				invalidSample=True
 				break #don't care about other stuff
@@ -213,6 +218,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 			
 			controlCtMean=mean(CtValuesForThisGene)
 			if controlCtMean>options.CtValueThresholdPerControl:
+				print >> stderr,"Filter7: Discard data row (the whole sample) because mean control Ct for",controlName,"was",controlCtMean,">maximum=",options.CtValueThresholdPerControl,"for sample",sampleName
 				sampleToRemove.append(idx)
 				invalidSample=True
 				break #don't care about other stuff
@@ -233,6 +239,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				
 				if numValuesForThisGene<options.minValidReplicates:
 					#remove this particular gene
+					print >> stderr,"Filter8: Discard gene because number of replicates for",geneName,"was",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName
 					emptyAllTheseArrays(dataForThisGene)				
 					
 
@@ -240,6 +247,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				if len(CtValuesForThisGene)>0:
 					dataMean=mean(CtValuesForThisGene)
 					if dataMean>options.CtValueThresholdPerData:
+						print >> stderr,"Filter9: Discard gene because mean Ct for",geneName,"was",dataMean,">maximum=",options.CtValueThresholdPerData,"for sample",sampleName
 						emptyAllTheseArrays(dataForThisGene)	
 	
 	
@@ -272,7 +280,7 @@ def normalizeFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows):
 			for j in range(0,len(CtValuesForThisGene)):
 				CtValuesForThisGene[j]-=controlMean
 
-def getMeanCtValueForGene(sampleStruct,geneName):
+def getMeanCtValueForGene(sampleStruct,geneName,NAString):
 	try:
 		return mean(sampleStruct[geneName][0]) #0 stores CtValues
 	except:
@@ -309,18 +317,26 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 		
 		fieldsToPrint=[sampleName]
 		if idx in invalidSampleRows: #print all NAs
-			fieldsToPrint.extend(["NA"]*(numColsToPrint-1))
+			fieldsToPrint.extend([options.NAString]*(numColsToPrint-1))
 		else:
 			#valid!
 			#print controls?
 			if options.printControl:
 				for controlName in options.controlNames:
-					fieldsToPrint.append(str(getMeanCtValueForGene(sampleStruct,controlName)))
+					fieldsToPrint.append(str(getMeanCtValueForGene(sampleStruct,controlName,options.NAString)))
 			
 			#now print data
 			for geneName in geneNamesInOrderNoControls:
-				fieldsToPrint.append(str(getMeanCtValueForGene(sampleStruct,geneName)))
-			
+				meanCt=getMeanCtValueForGene(sampleStruct,geneName,options.NAString)
+				if not options.useConventionalDeltaCt and meanCt!=options.NAString:
+					meanCt=options.outputOffset-meanCt
+				
+				if meanCt!=options.NAString:
+					if meanCt<0:
+						print >> stderr,"warning: output < 0 output=",meanCt,"for sample",sampleName,"and gene",geneName
+					
+				fieldsToPrint.append(str(meanCt))	
+					
 		print >> stdout,"\t".join(fieldsToPrint)
 	
 		
@@ -341,8 +357,16 @@ if __name__=='__main__':
 	parser.add_option("--min-number-of-valid-data-point-per-gene",dest="minValidReplicates",default=2,type=int,help="set a minimum number of data points for that gene (not including controls) in that sample for calling normalized value [2]")	
 	parser.add_option("--Ct-value-threshold-for-data-average",dest="CtValueThresholdPerData",default=50.0,type=float,help="set a Ct value threshold of the data (average among replicates of that data before normalization to controls) higher than which the data will be discarded [50.0]")
 	
+	#normalization method
+	parser.add_option("--output-ACx",dest="useConventionalDeltaCt",action="store_false",default=False,help="[default] output ACx = mean(Ct(Controls))-Ct(gene)+x where x is specified by --offset-output. This gives a higher value for higher expression and make the average control expression to as if it is x. i.e., the Ct value of a gene if the Ct value of the control is scaled to x. For getting Ratio Sample2/Sample1, do 2^(ACx(S2)-ACx(S1)) or operate as if in log2 space") 
+	parser.add_option("--offset-output",dest="outputOffset",default=20.0,type=float,help="specify the output offset. i.e., the x in ACx values. [20.0]")	
+	parser.add_option("--output-conventional-delta-ct",dest="useConventionalDeltaCt",default=False,action="store_true",help="output conventional delta Ct = Ct(gene)- mean(Ct(Controls)) such that higher delta Ct means lower expression relative to control. When getting Ratio Sample2/Sample1, then by delta delta Ct method, from this type of value it would be: 2^(DeltaCt(sample1)-DeltaCt(sample2))")
+	
+
+	
+	
 			
-	#formatting modifyers
+	#formatting modifiers
 	parser.add_option("--fs",dest="fs",default="\t",help="specify the field separator of the infile [tab]")
 	parser.add_option("--start-row",dest="startRow",default=2,type=int,help="specify the start row of data (excluding header) [2]")
 	parser.add_option("--header-row",dest="headerRow",default=1,type=int,help="specify the header row of data [1]")
@@ -352,8 +376,12 @@ if __name__=='__main__':
 	parser.add_option("--Ct-quality-col",dest="CtQualityCol",default="8",help="specify the column of the infile that contains the Ct Call  [8]")
 	parser.add_option("--Ct-call-col",dest="CtCallCol",default="9",help="specify the column of the infile that contains the Ct Call  [9]")
 	
+	#output modifiers:
 	parser.add_option("--print-controls",dest="printControl",default=False,action="store_true",help="print also raw control Ct values [NO]")
+	parser.add_option("--NA-string",dest="NAString",default="NA",help="set the output string for invalid data [NA]")
 		
+		
+	
 	(options, args) = parser.parse_args(argv)
 	
 	try:
