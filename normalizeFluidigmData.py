@@ -295,11 +295,13 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 	#now print header
 	fieldsToPrint=["SampleName"]
 	if printControl:
-		fieldsToPrint.extend(options.controlNames)
+		#fieldsToPrint.extend(options.controlNames)
+		for controlName in options.controlNames:
+			fieldsToPrint.append(options.controlPrefix+controlName)
 	
 	geneNamesInOrderNoControls=[]
 	for geneName in geneNamesInOrder:
-		if geneName not in options.controlNames:
+		if geneName not in options.controlNames and geneName not in geneNamesInOrderNoControls: #no duplicate names and no control names
 			geneNamesInOrderNoControls.append(geneName)
 	
 	fieldsToPrint.extend(geneNamesInOrderNoControls)
@@ -379,7 +381,7 @@ if __name__=='__main__':
 	#output modifiers:
 	parser.add_option("--print-controls",dest="printControl",default=False,action="store_true",help="print also raw control Ct values [NO]")
 	parser.add_option("--NA-string",dest="NAString",default="NA",help="set the output string for invalid data [NA]")
-		
+	parser.add_option("--control-prefix",dest="controlPrefix",default="control.",help="add a prefix to control genes [control.]")	
 		
 	
 	(options, args) = parser.parse_args(argv)
