@@ -137,7 +137,7 @@ def deleteAnElementFromAllArrays(listOfArrays,idx):
 	for arr in listOfArrays:
 		del arr[idx]
 
-def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a list of invalid samples [to be ignored for normalization and NA'ed for output
+def filterFluidigmData(sampleNames,sampleStructs,options,geneMapID): #inplace, return a list of invalid samples [to be ignored for normalization and NA'ed for output
 	'''
 	parser.add_option("--keep-Ct-call-failed",dest="discardCtCallFailed",default=True,action="store_false",help="keep Ct Call failed entries  (applied to data and controls) [False]")
 	parser.add_option("--Ct-quality-threshold",dest="CtQualityThreshold",default=-1.0,type=float,help="specify the CtQualityThreshold under which the value will be discarded (applied to data and controls) [-1.0:No treshold]")
@@ -154,6 +154,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 	'''
 	
 	sampleToRemove=[]
+	#filterMessages=[] #construct similar matrix structure as sampleStructsToRememberFilterStatus
 	
 	for idx in range(len(sampleNames)-1,-1,-1):
 		sampleName=sampleNames[idx]
@@ -174,17 +175,17 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				thisCtCall=CtCallForThisGene[j]
 				if options.discardCtCallFailed and thisCtCall.strip().upper()=="FAIL":
 					#discard this
-					print >> stderr,"Filter1: Discard data point due to FAIL Ct Call","for sample",sampleName,"and gene",geneName
+					print >> stderr,"Filter1: Discard data point due to FAIL Ct Call","for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 					
 				if thisCtQuality<options.CtQualityThreshold:
-					print >> stderr,"Filter2: Discard data point due to CtQuality lower than Threshold. CtQuality=",thisCtQuality,"<",options.CtQualityThreshold,"=threshold","for sample",sampleName,"and gene",geneName
+					print >> stderr,"Filter2: Discard data point due to CtQuality lower than Threshold. CtQuality=",thisCtQuality,"<",options.CtQualityThreshold,"=threshold","for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 				
 				if thisCtValue>=options.CtValueThreshold:
-					print >> stderr,"Filter3: Discard data point due to CtValue >= Threshold. CtValue=",thisCtValue,">=",options.CtValueThreshold,"=threshold","for sample",sampleName,"and gene",geneName
+					print >> stderr,"Filter3: Discard data point due to CtValue >= Threshold. CtValue=",thisCtValue,">=",options.CtValueThreshold,"=threshold","for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
 					deleteAnElementFromAllArrays(dataForThisGene,j)
 					continue
 			
@@ -193,8 +194,11 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				dev=max(CtValuesForThisGene)-min(CtValuesForThisGene)
 				if dev>options.MaxCtRepDev:
 					#remove all elements!!
-					print >> stderr,"Filter4: Discard data point due to deviation > Maximal. dev=",dev,">=",options.MaxCtRepDev,"=threshold","for sample",sampleName,"and gene",geneName
-					emptyAllTheseArrays(dataForThisGene)
+					print >> stderr,"Filter4: Discard data point due to deviation > Maximal. dev=",dev,">=",options.MaxCtRepDev,"=threshold","for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
+					#emptyAllTheseArrays(dataForThisGene)
+					for k in range(0,len(CtCallForThisGene)):
+						CtCallForThisGene[k]="INC" #inconsistent, mark that so that we know later not to 0 this gene
+					
 					
 				
 		#now for each control genes:
@@ -239,7 +243,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options): #inplace, return a li
 				
 				if numValuesForThisGene<options.minValidReplicates:
 					#remove this particular gene
-					print >> stderr,"Filter8: Discard gene because number of replicates for",geneName,"was",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName
+					print >> stderr,"Filter8: Discard gene because number of replicates for",geneName,"was",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
 					emptyAllTheseArrays(dataForThisGene)				
 					
 
@@ -278,7 +282,7 @@ def normalizeFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows):
 			CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=dataForThisGene
 			#not collapsed yet
 			for j in range(0,len(CtValuesForThisGene)):
-				CtValuesForThisGene[j]-=controlMean
+				CtValuesForThisGene[j]-=controlMean 
 
 def getMeanCtValueForGene(sampleStruct,geneName,NAString):
 	try:
@@ -290,9 +294,18 @@ def getStrArray(L):
 	S=[]
 	for x in L:
 		S.append(str(x))
-	return S	
-def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,printControl):
+	return S
+		
+def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,printControl,geneMapID):
 	#now print header
+	
+	outputMatrix=[]
+
+	if options.useConventionalDeltaCt:
+		blankValue=options.missingDataPolicy[2]
+	else:
+		blankValue=options.missingDataPolicy[1]	
+	
 	fieldsToPrint=["SampleName"]
 	if printControl:
 		#fieldsToPrint.extend(options.controlNames)
@@ -308,10 +321,10 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 	
 	numColsToPrint=len(fieldsToPrint)
 	
-	print >> stdout,"\t".join(fieldsToPrint)
+	#print >> stdout,"\t".join(fieldsToPrint)
+	outputMatrix.append(fieldsToPrint)
 	
-	
-	
+
 	#now print content
 	for idx in range(0,len(sampleNames)):
 		sampleName=sampleNames[idx]
@@ -329,17 +342,53 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 			
 			#now print data
 			for geneName in geneNamesInOrderNoControls:
+				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=sampleStruct[geneName]
+				
 				meanCt=getMeanCtValueForGene(sampleStruct,geneName,options.NAString)
 				if not options.useConventionalDeltaCt and meanCt!=options.NAString:
 					meanCt=options.outputOffset-meanCt
 				
 				if meanCt!=options.NAString:
 					if meanCt<0:
-						print >> stderr,"warning: output < 0 output=",meanCt,"for sample",sampleName,"and gene",geneName
-					
-				fieldsToPrint.append(str(meanCt))	
-					
-		print >> stdout,"\t".join(fieldsToPrint)
+						print >> stderr,"warning: output < 0 output=",meanCt,"for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
+				
+				#is this gene consistent?
+				consistent=True
+				for CtCall in CtCallForThisGene:
+					if CtCall=="INC":
+						consistent=False
+			
+				if consistent:
+					if meanCt==options.NAString:
+						if options.missingDataPolicy[0] in ["fill","fillifonevalid"]:
+							meanCt=blankValue
+				
+					fieldsToPrint.append(str(meanCt))	
+				else:
+					fieldsToPrint.append(options.NAString)	
+		#print >> stdout,"\t".join(fieldsToPrint)
+		outputMatrix.append(fieldsToPrint)
+		
+	#TODO:whether to NA out whole col blank values?
+	if options.missingDataPolicy[0]=='fillifonevalid': #because all are filled with blank values a priori
+
+		#find all columns with all blank values and NA them.
+		for c in range(1,len(outputMatrix)):
+			allblanks=True
+			for r in range(1,len(outputMatrix)):
+				if outputMatrix[r][c]!=blankValue and outputMatrix[r][c]!=options.NAString:
+					allblanks=False
+					break
+			
+			if allblanks:
+				#now set all row except header to NAString
+				for r in range(1,len(outputMatrix)):
+					outputMatrix[r][c]=options.NAString
+	
+	
+	for outputRow in outputMatrix:
+		print >> stdout,"\t".join(outputRow)
+	
 	
 		
 if __name__=='__main__':
@@ -382,7 +431,10 @@ if __name__=='__main__':
 	parser.add_option("--print-controls",dest="printControl",default=False,action="store_true",help="print also raw control Ct values [NO]")
 	parser.add_option("--NA-string",dest="NAString",default="NA",help="set the output string for invalid data [NA]")
 	parser.add_option("--control-prefix",dest="controlPrefix",default="control.",help="add a prefix to control genes [control.]")	
-		
+	parser.add_option("--missing-data-policy",dest="missingDataPolicy",default=["fill","0.0","50.0"],nargs=3,help="set how missing data are outputed for the final matrix (3 args): <nofill|*fill|fillifonevalid> <valueACxToFill> <valueDeltaCtToFill> default:fill 0.0 50.0")
+	
+
+	
 	
 	(options, args) = parser.parse_args(argv)
 	
@@ -396,6 +448,7 @@ if __name__=='__main__':
 	geneNamesInOrder=[]
 	
 	geneNameMap=dict()
+	geneMapID=dict()
 
 	if options.geneNameMap:
 		#if a gene name map is specified, usu is, then load it
@@ -404,6 +457,10 @@ if __name__=='__main__':
 		for lin in fil:
 			fields=lin.strip().split("\t")
 			geneNameMap[fields[0]]=fields[1]
+			if fields[1] in geneMapID:
+				geneMapID[fields[1]]+=","+fields[0]
+			else:
+				geneMapID[fields[1]]=fields[0]
 			geneNamesInOrder.append(fields[1])
 			
 		fil.close()	
@@ -415,7 +472,7 @@ if __name__=='__main__':
 	sampleNames,sampleStructs=readFluidigmFile(infile,options.sampleNameCol,options.geneNameCol,options.CtValueCol,options.CtQualityCol,options.CtCallCol,options.headerRow,options.startRow,options.fs,geneNameMap)
 	
 	#filter data
-	invalidSampleRows=filterFluidigmData(sampleNames,sampleStructs,options)
+	invalidSampleRows=filterFluidigmData(sampleNames,sampleStructs,options,geneMapID)
 	
 	#print >> stderr,"invalid sample rows",sorted(invalidSampleRows)
 	
@@ -423,5 +480,5 @@ if __name__=='__main__':
 	normalizeFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows)
 	
 	#now output
-	printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,options.printControl)
+	printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNamesInOrder,options.printControl,geneMapID)
 	
