@@ -212,6 +212,14 @@ def filterFluidigmData(sampleNames,sampleStructs,options,geneMapID): #inplace, r
 				invalidSample=True
 				break #don't care about other stuff
 				
+			#added Dec 4th.
+			if CtCallForThisGene[0]=="INC":
+				#inconsistent replicates of control
+				print >> stderr,"Filter10: Discard data row (the whole sample) because max-min of control",controlName,"was >maximum=",options.MaxCtRepDev,"for sample",sampleName
+				sampleToRemove.append(idx)
+				invalidSample=True
+				break
+				
 			if len(CtValuesForThisGene)==0 or len(CtValuesForThisGene)<options.minValidReplicatesControl:
 				#this whole row is to be removed
 				print >> stderr,"Filter6: Discard data row (the whole sample) because number of replicates for",controlName,"was",len(CtValuesForThisGene),"<minimum=",options.minValidReplicatesControl,"for sample",sampleName
@@ -240,6 +248,10 @@ def filterFluidigmData(sampleNames,sampleStructs,options,geneMapID): #inplace, r
 								
 				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=dataForThisGene
 				numValuesForThisGene=len(CtValuesForThisGene)
+				
+				if CtCallForThisGene[0]=="INC":
+					#inconsistent replicates of gene : don't do anything
+					continue
 				
 				if numValuesForThisGene<options.minValidReplicates:
 					#remove this particular gene
@@ -342,8 +354,13 @@ def printFluidigmData(sampleNames,sampleStructs,options,invalidSampleRows,geneNa
 			
 			#now print data
 			for geneName in geneNamesInOrderNoControls:
-				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=sampleStruct[geneName]
-				
+				try:
+					CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=sampleStruct[geneName]
+				except:
+					#gene not found
+					print >> stderr,"warning: gene data not found for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
+					fieldsToPrint.append(options.NAString)
+					
 				meanCt=getMeanCtValueForGene(sampleStruct,geneName,options.NAString)
 				if not options.useConventionalDeltaCt and meanCt!=options.NAString:
 					meanCt=options.outputOffset-meanCt
@@ -402,9 +419,9 @@ if __name__=='__main__':
 	parser.add_option("--keep-Ct-call-failed",dest="discardCtCallFailed",default=True,action="store_false",help="keep Ct Call failed entries  (applied to data and controls) [False]")
 	parser.add_option("--Ct-quality-threshold",dest="CtQualityThreshold",default=-1.0,type=float,help="specify the CtQualityThreshold under which the value will be discarded (applied to data and controls) [-1.0:No treshold]")
 	parser.add_option("--Ct-value-threshold",dest="CtValueThreshold",default=50.0,type=float,help="specify the max Ct value to be valid (applied to data and controls) [50.0]")
-	parser.add_option("--max-Ct-deviation-between-replicates",dest="MaxCtRepDev",default=5.0,type=float,help="set the maximal Ct deviation between replicates allowed  (applied to data and controls) [5.0]")
+	parser.add_option("--max-Ct-deviation-between-replicates",dest="MaxCtRepDev",default=2.0,type=float,help="set the maximal Ct deviation between replicates allowed  (applied to data and controls) [2.0]")
 	parser.add_option("--min-number-of-valid-data-point-per-control",dest="minValidReplicatesControl",default=1,type=int,help="set a minimum number of data points for that control [1]")
-	parser.add_option("--Ct-value-threshold-for-per-control-average",dest="CtValueThresholdPerControl",default=50.0,type=float,help="set a Ct value threshold per control (average among replicates of that control) higher than which the whole row of data will be discarded [50.0]")
+	parser.add_option("--Ct-value-threshold-for-per-control-average",dest="CtValueThresholdPerControl",default=30.0,type=float,help="set a Ct value threshold per control (average among replicates of that control) higher than which the whole row of data will be discarded [30.0]")
 	parser.add_option("--min-number-of-valid-data-point-per-gene",dest="minValidReplicates",default=2,type=int,help="set a minimum number of data points for that gene (not including controls) in that sample for calling normalized value [2]")	
 	parser.add_option("--Ct-value-threshold-for-data-average",dest="CtValueThresholdPerData",default=50.0,type=float,help="set a Ct value threshold of the data (average among replicates of that data before normalization to controls) higher than which the data will be discarded [50.0]")
 	
