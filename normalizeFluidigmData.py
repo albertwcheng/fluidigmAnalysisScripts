@@ -213,7 +213,7 @@ def filterFluidigmData(sampleNames,sampleStructs,options,geneMapID): #inplace, r
 				break #don't care about other stuff
 				
 			#added Dec 4th.
-			if CtCallForThisGene[0]=="INC":
+			if len(CtCallForThisGene)>0 and CtCallForThisGene[0]=="INC":
 				#inconsistent replicates of control
 				print >> stderr,"Filter10: Discard data row (the whole sample) because max-min of control",controlName,"was >maximum=",options.MaxCtRepDev,"for sample",sampleName
 				sampleToRemove.append(idx)
@@ -249,14 +249,22 @@ def filterFluidigmData(sampleNames,sampleStructs,options,geneMapID): #inplace, r
 				CtValuesForThisGene,CtQualsForThisGene,CtCallForThisGene=dataForThisGene
 				numValuesForThisGene=len(CtValuesForThisGene)
 				
-				if CtCallForThisGene[0]=="INC":
-					#inconsistent replicates of gene : don't do anything
+				#added Dec 5th.
+				if len(CtCallForThisGene)>0 and CtCallForThisGene[0]=="INC":
+					#inconsistent replicates of gene : don't do anything, will be taken care of by printing (NA)
 					continue
 				
-				if numValuesForThisGene<options.minValidReplicates:
-					#remove this particular gene
-					print >> stderr,"Filter8: Discard gene because number of replicates for",geneName,"was",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
-					emptyAllTheseArrays(dataForThisGene)				
+				
+				if numValuesForThisGene==0:
+					print >> stderr,"Filter8a: Discard gene because number of replicates for",geneName,"was",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
+					
+					#is empty already...
+					#emptyAllTheseArrays(dataForThisGene) #will be 0.0 because all fail can mean non-expressed gene
+				elif numValuesForThisGene<options.minValidReplicates: 
+					print >> stderr,"Filter8b: Discard gene because number of replicates for",geneName,"was 0<",numValuesForThisGene,"<minimum=",options.minValidReplicates,"for sample",sampleName,"and gene",geneName,"ID:",geneMapID[geneName]
+					#emptyAllTheseArrays(dataForThisGene)
+					for x in range(0,len(CtCallForThisGene)):
+						CtCallForThisGene[x]="INC"	#will be NA because only a few amplifies, i.e., unreliable data but not that the gene is not expressed
 					
 
 				
@@ -418,12 +426,12 @@ if __name__=='__main__':
 	#filters:
 	parser.add_option("--keep-Ct-call-failed",dest="discardCtCallFailed",default=True,action="store_false",help="keep Ct Call failed entries  (applied to data and controls) [False]")
 	parser.add_option("--Ct-quality-threshold",dest="CtQualityThreshold",default=-1.0,type=float,help="specify the CtQualityThreshold under which the value will be discarded (applied to data and controls) [-1.0:No treshold]")
-	parser.add_option("--Ct-value-threshold",dest="CtValueThreshold",default=50.0,type=float,help="specify the max Ct value to be valid (applied to data and controls) [50.0]")
+	parser.add_option("--Ct-value-threshold",dest="CtValueThreshold",default=30.0,type=float,help="specify the max Ct value to be valid (applied to data and controls) [30.0]")
 	parser.add_option("--max-Ct-deviation-between-replicates",dest="MaxCtRepDev",default=2.0,type=float,help="set the maximal Ct deviation between replicates allowed  (applied to data and controls) [2.0]")
 	parser.add_option("--min-number-of-valid-data-point-per-control",dest="minValidReplicatesControl",default=1,type=int,help="set a minimum number of data points for that control [1]")
-	parser.add_option("--Ct-value-threshold-for-per-control-average",dest="CtValueThresholdPerControl",default=30.0,type=float,help="set a Ct value threshold per control (average among replicates of that control) higher than which the whole row of data will be discarded [30.0]")
+	parser.add_option("--Ct-value-threshold-for-per-control-average",dest="CtValueThresholdPerControl",default=25.0,type=float,help="set a Ct value threshold per control (average among replicates of that control) higher than which the whole row of data will be discarded [25.0]")
 	parser.add_option("--min-number-of-valid-data-point-per-gene",dest="minValidReplicates",default=2,type=int,help="set a minimum number of data points for that gene (not including controls) in that sample for calling normalized value [2]")	
-	parser.add_option("--Ct-value-threshold-for-data-average",dest="CtValueThresholdPerData",default=50.0,type=float,help="set a Ct value threshold of the data (average among replicates of that data before normalization to controls) higher than which the data will be discarded [50.0]")
+	parser.add_option("--Ct-value-threshold-for-data-average",dest="CtValueThresholdPerData",default=30.0,type=float,help="set a Ct value threshold of the data (average among replicates of that data before normalization to controls) higher than which the data will be discarded [30.0]")
 	
 	#normalization method
 	parser.add_option("--output-ACx",dest="useConventionalDeltaCt",action="store_false",default=False,help="[default] output ACx = mean(Ct(Controls))-Ct(gene)+x where x is specified by --offset-output. This gives a higher value for higher expression and make the average control expression to as if it is x. i.e., the Ct value of a gene if the Ct value of the control is scaled to x. For getting Ratio Sample2/Sample1, do 2^(ACx(S2)-ACx(S1)) or operate as if in log2 space") 
